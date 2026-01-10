@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+requests
+python-dotenv
+python-multipart
+httpx
+pytest
+pytest-asyncio
+black
+flake8
+isort
+loguru
+aiofiles
+jinja2
