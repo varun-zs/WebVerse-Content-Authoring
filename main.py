@@ -46,7 +46,7 @@ app = FastAPI(
 # Add trusted host middleware
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["*"] if os.getenv("DEBUG") == "True" else ["localhost", "127.0.0.1"]
+    allowed_hosts=["*"] if os.getenv("DEBUG") == "True" else ["localhost", "127.0.0.1", "*.awsapprunner.com"]
 )
 # Include API router
 API_V1_PREFIX = os.getenv("API_V1_PREFIX") or "/api/v1"
@@ -76,3 +76,4 @@ if __name__ == "__main__":
         reload=os.getenv("DEBUG") == "True",
         log_level=os.getenv("LOG_LEVEL").lower()
     )
+
