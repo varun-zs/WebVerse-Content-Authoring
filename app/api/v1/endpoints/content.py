@@ -42,11 +42,24 @@ async def create_error_pages(request: ErrorPageCreateRequest):
                 custom_jcr_content=request.jcr_content_500
             )
             
-            # Check if both were successful
-            all_successful = result_404.get("success", False) and result_500.get("success", False)
+            # Check results
+            success_404 = result_404.get("success", False)
+            success_500 = result_500.get("success", False)
+            skipped_404 = result_404.get("skipped", False)
+            skipped_500 = result_500.get("skipped", False)
             
+            all_successful = success_404 and success_500
+            
+            # Build appropriate message
             if all_successful:
-                message = "Successfully updated 404 and 500 error pages"
+                if skipped_404 and skipped_500:
+                    message = "Both error page updates were skipped - no content provided"
+                elif skipped_404:
+                    message = "Successfully updated 500 error page. 404 update skipped."
+                elif skipped_500:
+                    message = "Successfully updated 404 error page. 500 update skipped."
+                else:
+                    message = "Successfully updated 404 and 500 error pages"
                 logger.info(message)
             else:
                 message = "Partial success: Some error page updates failed"
