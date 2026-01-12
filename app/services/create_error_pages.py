@@ -13,8 +13,18 @@ async def create_error_page(aem_client: AEMClient, page_path: str, error_type: s
     try:
         logger.info(f"Updating {error_type} error page at: {page_path}")
         
+        if custom_jcr_content is None:
+            logger.info(f"No JCR content provided for {error_type} error page. Skipping update.")
+            return {
+                "success": True,
+                "skipped": True,
+                "page_path": page_path,
+                "error_type": error_type,
+                "message": f"Update skipped - no content provided for {error_type} error page"
+            }
+        
         if not custom_jcr_content:
-            error_msg = f"No JCR content provided for {error_type} error page. JCR content is required to update the page."
+            error_msg = f"Empty JCR content provided for {error_type} error page. JCR content cannot be empty."
             logger.error(error_msg)
             return {
                 "success": False,
