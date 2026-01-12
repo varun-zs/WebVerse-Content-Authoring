@@ -6,12 +6,12 @@ class ErrorPageCreateRequest(BaseModel):
     """Schema for creating market-specific error pages"""
     page_path_404: str = Field(..., description="Full page path for the 404 error page")
     page_path_500: str = Field(..., description="Full page path for the 500 error page")
-    jcr_content_404: Dict[str, Any] = Field(
-        ...,
+    jcr_content_404: Optional[Dict[str, Any]] = Field(
+        None,
         description="JCR content structure for 404 error page to update the existing page."
     )
-    jcr_content_500: Dict[str, Any] = Field(
-        ...,
+    jcr_content_500: Optional[Dict[str, Any]] = Field(
+        None,
         description="JCR content structure for 500 error page to update the existing page."
     )
 
