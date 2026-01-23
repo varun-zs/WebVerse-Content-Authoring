@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
+from typing import List, Optional
 from app.schemas.content import (
     ErrorPageCreateRequest, ErrorPageCreateResponse,
     ErrorPageGetRequest, ErrorPageGetResponse,
@@ -7,13 +8,17 @@ from app.schemas.content import (
     HcpModalPopupCreateRequest, HcpModalPopupCreateResponse,
     HcpModalPopupGetRequest, HcpModalPopupGetResponse,
     LoginPageCreateRequest, LoginPageCreateResponse,
-    LoginPageGetRequest, LoginPageGetResponse
+    LoginPageGetRequest, LoginPageGetResponse,
+    ImageUploadResponse,
+    DAMFolderCreateRequest, DAMFolderCreateResponse
 )
 from app.services.aem_utils import AEMClient
 from app.services.create_error_pages import create_error_page
 from app.services.create_protected_pages import update_protected_page
 from app.services.create_popup_pages import update_hcp_modal_popup
 from app.services.create_login_pages import update_login_page
+from app.services.upload_images import upload_files_to_dam
+from app.services.dam_folder_operations import create_folder_structure
 from app.core.logging import logger
 
 router = APIRouter()
@@ -42,24 +47,11 @@ async def create_error_pages(request: ErrorPageCreateRequest):
                 custom_jcr_content=request.jcr_content_500
             )
             
-            # Check results
-            success_404 = result_404.get("success", False)
-            success_500 = result_500.get("success", False)
-            skipped_404 = result_404.get("skipped", False)
-            skipped_500 = result_500.get("skipped", False)
+            # Check if both were successful
+            all_successful = result_404.get("success", False) and result_500.get("success", False)
             
-            all_successful = success_404 and success_500
-            
-            # Build appropriate message
             if all_successful:
-                if skipped_404 and skipped_500:
-                    message = "Both error page updates were skipped - no content provided"
-                elif skipped_404:
-                    message = "Successfully updated 500 error page. 404 update skipped."
-                elif skipped_500:
-                    message = "Successfully updated 404 error page. 500 update skipped."
-                else:
-                    message = "Successfully updated 404 and 500 error pages"
+                message = "Successfully updated 404 and 500 error pages"
                 logger.info(message)
             else:
                 message = "Partial success: Some error page updates failed"
@@ -413,3 +405,142 @@ async def get_login_page(request: LoginPageGetRequest):
 
 
 # ---- End of Adobe AEM Login Page Content Authoring Functions ----
+
+
+# ---- Adobe AEM DAM Image Upload Functions ----
+
+
+@router.post("/upload-images", response_model=ImageUploadResponse)
+async def upload_images(
+    images: Optional[List[UploadFile]] = File(None, description="Image files to upload"),
+    images_path: Optional[str] = Form(None, description="DAM path for images (e.g., /content/dam/project/images)"),
+    pdfs: Optional[List[UploadFile]] = File(None, description="PDF files to upload"),
+    pdfs_path: Optional[str] = Form(None, description="DAM path for PDFs (e.g., /content/dam/project/pdfs)")
+):
+    """Upload images and/or PDFs to AEM DAM
+    
+    All fields are optional, but at least one file type must be provided with its corresponding path.
+    
+    Args:
+        images: List of image files to upload (optional)
+        images_path: DAM path where images should be uploaded (optional, required if images provided)
+        pdfs: List of PDF files to upload (optional)
+        pdfs_path: DAM path where PDFs should be uploaded (optional, required if pdfs provided)
+        
+    Returns:
+        ImageUploadResponse with upload results for both images and PDFs
+        
+    Example:
+        images: [file1.jpg, file2.png]
+        images_path: /content/dam/buildeasy/mava/India/En/HCP/Images
+        pdfs: [doc1.pdf, doc2.pdf]
+        pdfs_path: /content/dam/buildeasy/mava/India/En/HCP/PDFs
+    """
+    try:
+        # Validation: Check if at least one file type is provided
+        if not images and not pdfs:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one image or PDF must be provided"
+            )
+        
+        # Validation: If images provided, path is required
+        if images and not images_path:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="images_path is required when images are provided"
+            )
+        
+        # Validation: If PDFs provided, path is required
+        if pdfs and not pdfs_path:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="pdfs_path is required when PDFs are provided"
+            )
+        
+        logger.info(f"Received request to upload {len(images) if images else 0} image(s) and {len(pdfs) if pdfs else 0} PDF(s)")
+        
+        async with AEMClient() as aem:
+            result = await upload_files_to_dam(
+                aem_client=aem,
+                images=images,
+                images_path=images_path,
+                pdfs=pdfs,
+                pdfs_path=pdfs_path
+            )
+            
+            return ImageUploadResponse(
+                success=result.get("success", False),
+                message=result.get("message", ""),
+                uploaded_images=result.get("uploaded_images"),
+                uploaded_pdfs=result.get("uploaded_pdfs"),
+                error_details=result.get("error")
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading files: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload files: {str(e)}"
+        )
+
+
+@router.post("/create-dam-folders", response_model=DAMFolderCreateResponse)
+async def create_dam_folders(request: DAMFolderCreateRequest):
+    """Create DAM folder structure for market/locale/site
+    
+    Creates a hierarchical folder structure in AEM DAM:
+    - {dam_path}/{market}/{locale}/{site}/Images
+    - {dam_path}/{market}/{locale}/{site}/PDFs
+    
+    Args:
+        request: DAMFolderCreateRequest with dam_path, market, locale, and site
+        
+    Returns:
+        DAMFolderCreateResponse with paths to created folders
+        
+    Example:
+        Input: dam_path="/content/dam/buildeasy/mava", market="India", locale="En", site="HCP"
+        Output: Creates /content/dam/buildeasy/mava/India/En/HCP/Images and /content/dam/buildeasy/mava/India/En/HCP/PDFs
+    """
+    try:
+        logger.info(f"Received request to create DAM folders: {request.dict()}")
+        
+        async with AEMClient() as aem:
+            result = await create_folder_structure(
+                aem_client=aem,
+                dam_path=request.dam_path,
+                market=request.market,
+                locale=request.locale,
+                site=request.site
+            )
+            
+            if not result.get("success"):
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=result.get("error", "Failed to create folder structure")
+                )
+            
+            return DAMFolderCreateResponse(
+                success=True,
+                message=result.get("message", "Folder structure created successfully"),
+                hcp_images_path=result.get("hcp_images_path"),
+                hcp_pdfs_path=result.get("hcp_pdfs_path"),
+                patient_images_path=result.get("patient_images_path"),
+                patient_pdfs_path=result.get("patient_pdfs_path")
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating DAM folders: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create DAM folders: {str(e)}"
+        )
+
+
+# ---- End of Adobe AEM DAM Image Upload Functions ----
+# ---- End of Adobe AEM DAM Image Upload Functions ----
