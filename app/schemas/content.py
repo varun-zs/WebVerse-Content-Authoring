@@ -6,12 +6,12 @@ class ErrorPageCreateRequest(BaseModel):
     """Schema for creating market-specific error pages"""
     page_path_404: str = Field(..., description="Full page path for the 404 error page")
     page_path_500: str = Field(..., description="Full page path for the 500 error page")
-    jcr_content_404: Optional[Dict[str, Any]] = Field(
-        None,
+    jcr_content_404: Dict[str, Any] = Field(
+        ...,
         description="JCR content structure for 404 error page to update the existing page."
     )
-    jcr_content_500: Optional[Dict[str, Any]] = Field(
-        None,
+    jcr_content_500: Dict[str, Any] = Field(
+        ...,
         description="JCR content structure for 500 error page to update the existing page."
     )
 
@@ -124,4 +124,32 @@ class LoginPageGetResponse(BaseModel):
     success: bool
     message: str
     page_content: Optional[Dict[str, Any]] = Field(None, description="Login page content and metadata")
+    error_details: Optional[str] = None
+
+
+class ImageUploadResponse(BaseModel):
+    """Schema for image and PDF upload response"""
+    success: bool
+    message: str
+    uploaded_images: Optional[List[Dict[str, Any]]] = Field(None, description="Details of uploaded image files")
+    uploaded_pdfs: Optional[List[Dict[str, Any]]] = Field(None, description="Details of uploaded PDF files")
+    error_details: Optional[str] = None
+
+
+class DAMFolderCreateRequest(BaseModel):
+    """Schema for creating DAM folder structure"""
+    dam_path: str = Field(..., description="Base DAM path (e.g., /content/dam/buildeasy/mava)")
+    market: str = Field(..., description="Market name (e.g., India)")
+    locale: str = Field(..., description="Locale code (e.g., En)")
+    site: str = Field(..., description="Site type: 'HCP', 'Patient', or 'Both'")
+
+
+class DAMFolderCreateResponse(BaseModel):
+    """Schema for DAM folder creation response"""
+    success: bool
+    message: str
+    hcp_images_path: Optional[str] = Field(None, description="Path to HCP Images folder")
+    hcp_pdfs_path: Optional[str] = Field(None, description="Path to HCP PDFs folder")
+    patient_images_path: Optional[str] = Field(None, description="Path to Patient Images folder")
+    patient_pdfs_path: Optional[str] = Field(None, description="Path to Patient PDFs folder")
     error_details: Optional[str] = None
