@@ -26,3 +26,19 @@ class ListPagesResponse(BaseModel):
     jcr_content: Optional[Dict[str, Any]] = None
     error_details: Optional[str] = None
 
+
+class ModifyLocaleRequest(BaseModel):
+    """Schema for modifying locale of a site"""
+    page_path: str = Field(..., description="Full page path for the site")
+    jcr_content: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Optional JCR content structure to update the site locale."
+    )
+
+
+class ModifyLocaleResponse(BaseModel):
+    """Schema for modify locale response"""
+    success: bool
+    message: str
+    page_path: Optional[str] = None
+    error_details: Optional[str] = None
