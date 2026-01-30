@@ -1,9 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.site import (
     DuplicateTemplateRequest, DuplicateTemplateResponse,
-    ListPagesRequest, ListPagesResponse
+    ListPagesRequest, ListPagesResponse,
+    ModifyLocaleRequest, ModifyLocaleResponse
 )
 from app.services.aem_utils import AEMClient
+from app.services.modify_locale import modify_site_locale
 from app.core.logging import logger
 
 router = APIRouter()
@@ -174,6 +176,63 @@ async def list_pages(request: ListPagesRequest):
         raise
     except Exception as e:
         error_message = f"Error listing pages from {request.site_path}: {str(e)}"
+        logger.error(error_message)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_message
+        )
+
+
+@router.post("/modify-locale", response_model=ModifyLocaleResponse)
+async def modify_locale(request: ModifyLocaleRequest):
+    """
+    Modify the locale of a site.
+    
+    This endpoint updates the locale settings for a site page. 
+    If JCR content is provided, it will be used to update the page.
+    If JCR content is not provided (None), the modification will be skipped.
+    
+    Args:
+        request: ModifyLocaleRequest with page_path and optional jcr_content
+        
+    Returns:
+        ModifyLocaleResponse with detailed result of the locale modification
+    """
+    try:
+        logger.info(f"Received request to modify locale for: {request.page_path}")
+        
+        async with AEMClient() as aem:
+            locale_result = await modify_site_locale(
+                aem_client=aem,
+                page_path=request.page_path,
+                custom_jcr_content=request.jcr_content
+            )
+        
+        # Determine success and create appropriate message
+        locale_success = locale_result.get("success", False)
+        skipped = locale_result.get("skipped", False)
+        
+        if locale_success:
+            if skipped:
+                message = "Locale modification skipped - no content provided"
+            else:
+                message = "Successfully modified site locale"
+            page_path = locale_result.get("page_path")
+        else:
+            message = "Failed to modify site locale"
+            page_path = None
+        
+        logger.info(f"Locale modification result: {message}")
+        
+        return ModifyLocaleResponse(
+            success=locale_success,
+            message=message,
+            page_path=page_path,
+            error_details=locale_result.get("error") if not locale_success else None
+        )
+        
+    except Exception as e:
+        error_message = f"Failed to modify site locale: {str(e)}"
         logger.error(error_message)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
