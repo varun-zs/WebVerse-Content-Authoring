@@ -42,3 +42,17 @@ class ModifyLocaleResponse(BaseModel):
     message: str
     page_path: Optional[str] = None
     error_details: Optional[str] = None
+
+
+class DuplicateExperienceFragmentRequest(BaseModel):
+    """Schema for duplicating an experience fragment folder"""
+    xf_path: str = Field(..., description="Source experience fragment path to duplicate")
+    market_region: str = Field(..., description="New market region name for the duplicated experience fragment")
+
+
+class DuplicateExperienceFragmentResponse(BaseModel):
+    """Schema for duplicate experience fragment response"""
+    success: bool
+    new_xf_path: Optional[str] = None
+    message: Optional[str] = None
+    error_details: Optional[str] = None
