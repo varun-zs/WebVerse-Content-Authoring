@@ -32,9 +32,9 @@ async def duplicate_experience_fragment(
         original_folder_name = path_parts[-1]
         destination_parent_path = "/".join(path_parts[:-1])
         
-        # Create new folder name with market region
-        new_folder_name = f"{original_folder_name}-{market_sanitized}"
-        new_folder_title = f"{original_folder_name} - {market_region}"
+        # Use market region as the new folder name and title
+        new_folder_name = market_sanitized
+        new_folder_title = new_folder_name
         
         # Use AEM client to duplicate
         async with AEMClient() as aem:
