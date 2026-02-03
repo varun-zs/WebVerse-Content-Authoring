@@ -2,10 +2,12 @@ from fastapi import APIRouter, HTTPException, status
 from app.schemas.site import (
     DuplicateTemplateRequest, DuplicateTemplateResponse,
     ListPagesRequest, ListPagesResponse,
-    ModifyLocaleRequest, ModifyLocaleResponse
+    ModifyLocaleRequest, ModifyLocaleResponse,
+    DuplicateExperienceFragmentRequest, DuplicateExperienceFragmentResponse
 )
 from app.services.aem_utils import AEMClient
 from app.services.modify_locale import modify_site_locale
+from app.services.duplicate_experience_fragment import duplicate_experience_fragment
 from app.core.logging import logger
 
 router = APIRouter()
@@ -233,6 +235,60 @@ async def modify_locale(request: ModifyLocaleRequest):
         
     except Exception as e:
         error_message = f"Failed to modify site locale: {str(e)}"
+        logger.error(error_message)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_message
+        )
+
+
+@router.post("/duplicate-experience-fragment", response_model=DuplicateExperienceFragmentResponse)
+async def duplicate_xf(request: DuplicateExperienceFragmentRequest):
+    """
+    Duplicate an experience fragment folder and rename it with a new market region.
+    
+    This endpoint copies an existing experience fragment folder and creates a new one
+    with the market region appended to the folder name.
+    
+    Example:
+        If xf_path is "/content/experience-fragments/mava/header" and market_region is "india",
+        a new folder will be created at "/content/experience-fragments/mava/header-india"
+    
+    Args:
+        request: DuplicateExperienceFragmentRequest with xf_path and market_region
+        
+    Returns:
+        DuplicateExperienceFragmentResponse with success status and new XF path
+    """
+    try:
+        logger.info(f"Received request to duplicate experience fragment: {request.xf_path}")
+        
+        # Call the service function
+        result = await duplicate_experience_fragment(
+            xf_path=request.xf_path,
+            market_region=request.market_region
+        )
+        
+        if result.get("success"):
+            logger.info(f"Experience fragment duplication successful")
+            
+            return DuplicateExperienceFragmentResponse(
+                success=True,
+                new_xf_path=result.get("new_xf_path"),
+                message=result.get("message")
+            )
+        else:
+            logger.error(f"Experience fragment duplication failed: {result.get('error')}")
+            
+            return DuplicateExperienceFragmentResponse(
+                success=False,
+                new_xf_path=None,
+                message=None,
+                error_details=result.get("error")
+            )
+    
+    except Exception as e:
+        error_message = f"Error processing experience fragment duplication request: {str(e)}"
         logger.error(error_message)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
