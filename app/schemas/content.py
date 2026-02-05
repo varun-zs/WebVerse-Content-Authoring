@@ -127,6 +127,21 @@ class LoginPageGetResponse(BaseModel):
     error_details: Optional[str] = None
 
 
+class FileUploadItem(BaseModel):
+    """Schema for a single file upload item"""
+    filename: str = Field(..., description="Name of the file")
+    content: str = Field(..., description="Base64 encoded file content")
+    content_type: str = Field(..., description="MIME type of the file (e.g., image/jpeg, application/pdf)")
+
+
+class ImageUploadRequest(BaseModel):
+    """Schema for image and PDF upload request"""
+    images: Optional[List[FileUploadItem]] = Field(None, description="List of image files to upload")
+    images_path: Optional[str] = Field(None, description="DAM path for images (e.g., /content/dam/project/images)")
+    pdfs: Optional[List[FileUploadItem]] = Field(None, description="List of PDF files to upload")
+    pdfs_path: Optional[str] = Field(None, description="DAM path for PDFs (e.g., /content/dam/project/pdfs)")
+
+
 class ImageUploadResponse(BaseModel):
     """Schema for image and PDF upload response"""
     success: bool
@@ -152,4 +167,27 @@ class DAMFolderCreateResponse(BaseModel):
     hcp_pdfs_path: Optional[str] = Field(None, description="Path to HCP PDFs folder")
     patient_images_path: Optional[str] = Field(None, description="Path to Patient Images folder")
     patient_pdfs_path: Optional[str] = Field(None, description="Path to Patient PDFs folder")
+    error_details: Optional[str] = None
+
+
+class ModifyExperienceFragmentRequest(BaseModel):
+    """Schema for modifying experience fragment headers and footers"""
+    protected_header_path: Optional[str] = Field(None, description="Path to protected header experience fragment")
+    protected_header_jcr_content: Optional[Dict[str, Any]] = Field(None, description="JCR content for protected header")
+    protected_footer_path: Optional[str] = Field(None, description="Path to protected footer experience fragment")
+    protected_footer_jcr_content: Optional[Dict[str, Any]] = Field(None, description="JCR content for protected footer")
+    login_header_path: Optional[str] = Field(None, description="Path to login header experience fragment")
+    login_header_jcr_content: Optional[Dict[str, Any]] = Field(None, description="JCR content for login header")
+    login_footer_path: Optional[str] = Field(None, description="Path to login footer experience fragment")
+    login_footer_jcr_content: Optional[Dict[str, Any]] = Field(None, description="JCR content for login footer")
+
+
+class ModifyExperienceFragmentResponse(BaseModel):
+    """Schema for experience fragment modification response"""
+    success: bool
+    message: str
+    protected_header_updated: Optional[bool] = None
+    protected_footer_updated: Optional[bool] = None
+    login_header_updated: Optional[bool] = None
+    login_footer_updated: Optional[bool] = None
     error_details: Optional[str] = None
