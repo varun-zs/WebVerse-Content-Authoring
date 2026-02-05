@@ -27,14 +27,16 @@ async def duplicate_experience_fragment(
         # Sanitize market region name: convert to lowercase and replace spaces with hyphens
         market_sanitized = market_region.lower().replace(" ", "-")
         
-        # Extract the parent path and original folder name
+        # Extract the parent path
         path_parts = xf_path.rstrip("/").split("/")
-        original_folder_name = path_parts[-1]
-        destination_parent_path = "/".join(path_parts[:-1])
+        # Go up two levels to get the parent of the parent
+        # This prevents double nesting when AEM copies the folder
+        parent_of_parent = "/".join(path_parts[:-1])
         
         # Use market region as the new folder name and title
         new_folder_name = market_sanitized
-        new_folder_title = new_folder_name
+        new_folder_title = market_region
+        new_xf_path = f"{parent_of_parent}/{new_folder_name}"
         
         # Use AEM client to duplicate
         async with AEMClient() as aem:
@@ -47,29 +49,47 @@ async def duplicate_experience_fragment(
                     "new_xf_path": None
                 }
             
-            # Additional properties for the experience fragment
-            additional_properties = {
-                "marketRegion": market_region,
-                "sourceXF": xf_path
+            # Build copy operation data directly
+            copy_url = f"{aem.host}{xf_path}"
+            copy_data = {
+                ":operation": "copy",
+                ":dest": new_xf_path,
+                ":replace": "true",
+                "_charset_": "utf-8"
             }
             
-            # Duplicate the experience fragment
-            result = await aem.duplicate_page_template(
-                source_path=xf_path,
-                destination_parent_path=destination_parent_path,
-                new_page_name=new_folder_name,
-                new_page_title=new_folder_title,
-                additional_properties=additional_properties
-            )
+            # Execute copy operation
+            logger.info(f"Copying from {xf_path} to {new_xf_path}")
+            response = await aem.client.post(copy_url, data=copy_data, headers=aem._get_headers())
+            response.raise_for_status()
+            
+            logger.info(f"Successfully copied experience fragment to {new_xf_path}")
+            
+            # Update the title and additional properties
+            update_data = {
+                "jcr:content/jcr:title": new_folder_title,
+                "_charset_": "utf-8"
+            }
+            
+            # Update the new experience fragment
+            update_url = f"{aem.host}{new_xf_path}"
+            update_response = await aem.client.post(update_url, data=update_data, headers=aem._get_headers())
+            update_response.raise_for_status()
+            
+            logger.info(f"Successfully updated experience fragment properties for {new_xf_path}")
+            
+            result = {
+                "success": True,
+                "new_path": new_xf_path
+            }
             
             if result.get("success"):
-                new_path = result.get("new_path")
-                logger.info(f"Successfully duplicated experience fragment to {new_path}")
+                logger.info(f"Successfully duplicated experience fragment to {new_xf_path}")
                 
                 return {
                     "success": True,
-                    "new_xf_path": new_path,
-                    "message": f"Successfully duplicated experience fragment to {new_path}"
+                    "new_xf_path": new_xf_path,
+                    "message": f"Successfully duplicated experience fragment to {new_xf_path}"
                 }
             else:
                 error = result.get("error", "Unknown error occurred during duplication")
