@@ -9,16 +9,17 @@ from app.schemas.content import (
     HcpModalPopupGetRequest, HcpModalPopupGetResponse,
     LoginPageCreateRequest, LoginPageCreateResponse,
     LoginPageGetRequest, LoginPageGetResponse,
-    ImageUploadResponse,
-    DAMFolderCreateRequest, DAMFolderCreateResponse
+    ImageUploadRequest, ImageUploadResponse,
+    DAMFolderCreateRequest, DAMFolderCreateResponse,
+    ModifyExperienceFragmentRequest, ModifyExperienceFragmentResponse
 )
 from app.services.aem_utils import AEMClient
 from app.services.create_error_pages import create_error_page
 from app.services.create_protected_pages import update_protected_page
 from app.services.create_popup_pages import update_hcp_modal_popup
 from app.services.create_login_pages import update_login_page
-from app.services.upload_images import upload_files_to_dam
-from app.services.dam_folder_operations import create_folder_structure
+from app.services.dam_folder_operations import create_folder_structure, upload_files_to_dam_base64
+from app.services.modify_experience_fragment import modify_experience_fragments
 from app.core.logging import logger
 
 router = APIRouter()
@@ -47,11 +48,24 @@ async def create_error_pages(request: ErrorPageCreateRequest):
                 custom_jcr_content=request.jcr_content_500
             )
             
-            # Check if both were successful
-            all_successful = result_404.get("success", False) and result_500.get("success", False)
+            # Check results
+            success_404 = result_404.get("success", False)
+            success_500 = result_500.get("success", False)
+            skipped_404 = result_404.get("skipped", False)
+            skipped_500 = result_500.get("skipped", False)
             
+            all_successful = success_404 and success_500
+            
+            # Build appropriate message
             if all_successful:
-                message = "Successfully updated 404 and 500 error pages"
+                if skipped_404 and skipped_500:
+                    message = "Both error page updates were skipped - no content provided"
+                elif skipped_404:
+                    message = "Successfully updated 500 error page. 404 update skipped."
+                elif skipped_500:
+                    message = "Successfully updated 404 error page. 500 update skipped."
+                else:
+                    message = "Successfully updated 404 and 500 error pages"
                 logger.info(message)
             else:
                 message = "Partial success: Some error page updates failed"
@@ -411,62 +425,77 @@ async def get_login_page(request: LoginPageGetRequest):
 
 
 @router.post("/upload-images", response_model=ImageUploadResponse)
-async def upload_images(
-    images: Optional[List[UploadFile]] = File(None, description="Image files to upload"),
-    images_path: Optional[str] = Form(None, description="DAM path for images (e.g., /content/dam/project/images)"),
-    pdfs: Optional[List[UploadFile]] = File(None, description="PDF files to upload"),
-    pdfs_path: Optional[str] = Form(None, description="DAM path for PDFs (e.g., /content/dam/project/pdfs)")
-):
+async def upload_images(request: ImageUploadRequest):
     """Upload images and/or PDFs to AEM DAM
     
+    Accepts Base64 encoded files in JSON request body.
     All fields are optional, but at least one file type must be provided with its corresponding path.
     
     Args:
-        images: List of image files to upload (optional)
-        images_path: DAM path where images should be uploaded (optional, required if images provided)
-        pdfs: List of PDF files to upload (optional)
-        pdfs_path: DAM path where PDFs should be uploaded (optional, required if pdfs provided)
+        request: ImageUploadRequest containing:
+            - images: List of image files with filename, content (Base64), and content_type
+            - images_path: DAM path where images should be uploaded
+            - pdfs: List of PDF files with filename, content (Base64), and content_type
+            - pdfs_path: DAM path where PDFs should be uploaded
         
     Returns:
         ImageUploadResponse with upload results for both images and PDFs
         
-    Example:
-        images: [file1.jpg, file2.png]
-        images_path: /content/dam/buildeasy/mava/India/En/HCP/Images
-        pdfs: [doc1.pdf, doc2.pdf]
-        pdfs_path: /content/dam/buildeasy/mava/India/En/HCP/PDFs
+    Example Request Body:
+        {
+            "images": [
+                {
+                    "filename": "image1.jpg",
+                    "content": "base64encodedcontent...",
+                    "content_type": "image/jpeg"
+                }
+            ],
+            "images_path": "/content/dam/buildeasy/mava/India/En/HCP/Images",
+            "pdfs": [
+                {
+                    "filename": "doc1.pdf",
+                    "content": "base64encodedcontent...",
+                    "content_type": "application/pdf"
+                }
+            ],
+            "pdfs_path": "/content/dam/buildeasy/mava/India/En/HCP/PDFs"
+        }
     """
     try:
         # Validation: Check if at least one file type is provided
-        if not images and not pdfs:
+        if not request.images and not request.pdfs:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="At least one image or PDF must be provided"
             )
         
         # Validation: If images provided, path is required
-        if images and not images_path:
+        if request.images and not request.images_path:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="images_path is required when images are provided"
             )
         
         # Validation: If PDFs provided, path is required
-        if pdfs and not pdfs_path:
+        if request.pdfs and not request.pdfs_path:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="pdfs_path is required when PDFs are provided"
             )
         
-        logger.info(f"Received request to upload {len(images) if images else 0} image(s) and {len(pdfs) if pdfs else 0} PDF(s)")
+        logger.info(f"Received request to upload {len(request.images) if request.images else 0} image(s) and {len(request.pdfs) if request.pdfs else 0} PDF(s)")
+        
+        # Convert Pydantic models to dicts
+        images_data = [img.dict() for img in request.images] if request.images else None
+        pdfs_data = [pdf.dict() for pdf in request.pdfs] if request.pdfs else None
         
         async with AEMClient() as aem:
-            result = await upload_files_to_dam(
+            result = await upload_files_to_dam_base64(
                 aem_client=aem,
-                images=images,
-                images_path=images_path,
-                pdfs=pdfs,
-                pdfs_path=pdfs_path
+                images=images_data,
+                images_path=request.images_path,
+                pdfs=pdfs_data,
+                pdfs_path=request.pdfs_path
             )
             
             return ImageUploadResponse(
@@ -543,4 +572,62 @@ async def create_dam_folders(request: DAMFolderCreateRequest):
 
 
 # ---- End of Adobe AEM DAM Image Upload Functions ----
-# ---- End of Adobe AEM DAM Image Upload Functions ----
+
+
+@router.post("/modify-experience-fragments", response_model=ModifyExperienceFragmentResponse)
+async def modify_experience_fragments_endpoint(request: ModifyExperienceFragmentRequest):
+    """
+    Modify experience fragment headers and footers for protected and login pages.
+    
+    This endpoint allows updating JCR content for up to 4 experience fragments:
+    - Protected header
+    - Protected footer
+    - Login header
+    - Login footer
+    
+    Each fragment requires both a path and JCR content. If either is missing, that fragment is skipped.
+    
+    Args:
+        request: ModifyExperienceFragmentRequest with paths and JCR content for headers/footers
+        
+    Returns:
+        ModifyExperienceFragmentResponse with success status and update details for each fragment
+    """
+    try:
+        logger.info("Received request to modify experience fragments")
+        
+        async with AEMClient() as aem:
+            result = await modify_experience_fragments(
+                aem_client=aem,
+                protected_header_path=request.protected_header_path,
+                protected_header_jcr_content=request.protected_header_jcr_content,
+                protected_footer_path=request.protected_footer_path,
+                protected_footer_jcr_content=request.protected_footer_jcr_content,
+                login_header_path=request.login_header_path,
+                login_header_jcr_content=request.login_header_jcr_content,
+                login_footer_path=request.login_footer_path,
+                login_footer_jcr_content=request.login_footer_jcr_content
+            )
+            
+            success = result.get("success", False)
+            message = result.get("message", "")
+            
+            return ModifyExperienceFragmentResponse(
+                success=success,
+                message=message,
+                protected_header_updated=result.get("protected_header_updated"),
+                protected_footer_updated=result.get("protected_footer_updated"),
+                login_header_updated=result.get("login_header_updated"),
+                login_footer_updated=result.get("login_footer_updated"),
+                error_details=result.get("error")
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_message = f"Error modifying experience fragments: {str(e)}"
+        logger.error(error_message)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_message
+        )
