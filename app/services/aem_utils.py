@@ -185,6 +185,7 @@ class AEMClient:
                 ":operation": "copy",
                 ":dest": new_page_path,
                 ":async": "true",
+                ":replace": "true",
                 "_charset_": "utf-8"
             }
             
